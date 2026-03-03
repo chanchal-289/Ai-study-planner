@@ -21,7 +21,7 @@ export default function AIPlan() {
       const res = await axios.get('http://localhost:5000/api/planner/daily', { headers })
       setDailyPlan(res.data)
     } catch (err) {
-      setError('Failed to generate plan. Try again.')
+      setError(err.response?.data?.error || 'Failed to generate plan. Try again.')
     } finally {
       setLoading(false)
     }
@@ -34,7 +34,7 @@ export default function AIPlan() {
       const res = await axios.get('http://localhost:5000/api/planner/weekly', { headers })
       setWeeklyPlan(res.data)
     } catch (err) {
-      setError('Failed to generate plan. Try again.')
+      setError(err.response?.data?.error || 'Failed to generate plan. Try again.')
     } finally {
       setLoading(false)
     }
