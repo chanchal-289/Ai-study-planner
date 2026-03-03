@@ -19,9 +19,8 @@ router.get('/daily', protect, async (req, res) => {
     const prompt = `
       You are a study planner AI. A student has these topics due for review today:
       ${topics.map(t => `- ${t.name} (${t.subject})`).join('\n')}
-      
       Create a practical daily study plan with time blocks.
-      Keep it motivating and realistic. 
+      Keep it motivating and realistic.
       Respond ONLY with a JSON object, no markdown, no backticks:
       { "plan": [{ "time": "9:00 AM", "topic": "", "duration": "30 mins", "tip": "" }] }
     `
@@ -31,3 +30,6 @@ router.get('/daily', protect, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
+})
+
+export default router

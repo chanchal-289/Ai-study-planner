@@ -18,21 +18,16 @@ app.use('/api/planner', plannerRoutes)
 
 app.get('/', (req, res) => res.json({ message: 'AI Study Planner API ✅' }))
 
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => {
+const startServer = async () => {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI)
     console.log('MongoDB connected ✅')
     app.listen(process.env.PORT || 5000, () =>
       console.log('Server running on port 5000 ✅')
     )
-  })
-  .catch(err => console.error('MongoDB connection error:', err))
-```
+  } catch (err) {
+    console.error('MongoDB connection error:', err)
+  }
+}
 
----
-
-**`.env`:**
-```
-MONGODB_URI=your_mongodb_connection_string_here
-JWT_SECRET=supersecretkey123changeme
-GEMINI_API_KEY=your_gemini_key_here
-PORT=5000
+startServer()
