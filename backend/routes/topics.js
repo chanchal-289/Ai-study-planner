@@ -44,4 +44,17 @@ router.get('/due-today', protect, async (req, res) => {
   }
 })
 
+router.delete('/:id', protect, async (req, res) => {
+  try {
+    const topic = await Topic.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.userId
+    })
+    if (!topic) return res.status(404).json({ error: 'Topic not found' })
+    res.json({ message: 'Topic deleted' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 export default router

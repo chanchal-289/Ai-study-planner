@@ -47,6 +47,16 @@ export default function Dashboard() {
     }
   }
 
+  const handleDelete = async (topicId) => {
+    if (!window.confirm('Delete this topic? This cannot be undone.')) return
+    try {
+        await axios.delete(`http://localhost:5000/api/topics/${topicId}`, { headers })
+        fetchTopics()
+    } catch (err) {
+        console.error(err)
+    }
+ }
+
   const handleLogout = () => {
     logout()
     navigate('/login')
@@ -77,6 +87,12 @@ export default function Dashboard() {
           >
             Logout
           </button>
+          <button
+                onClick={() => navigate('/ai-plan')}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-sm transition"
+            >
+                🤖 AI Plan
+            </button>
         </div>
       </div>
 
@@ -185,17 +201,26 @@ export default function Dashboard() {
             {topics.map(topic => (
               <div key={topic._id} className="bg-white rounded-xl shadow-sm p-4">
                 <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-semibold text-gray-800 text-sm">{topic.name}</h3>
-                    <span className="text-xs text-gray-400">{topic.subject}</span>
-                  </div>
-                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                    topic.repetitions > 3
-                      ? 'bg-green-100 text-green-600'
-                      : 'bg-indigo-100 text-indigo-600'
-                  }`}>
-                    {topic.repetitions > 3 ? '⭐ Mastered' : `Rep ${topic.repetitions}`}
-                  </span>
+                    <div>
+                        <h3 className="font-semibold text-gray-800 text-sm">{topic.name}</h3>
+                        <span className="text-xs text-gray-400">{topic.subject}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                            topic.repetitions > 3
+                                ? 'bg-green-100 text-green-600'
+                                : 'bg-indigo-100 text-indigo-600'
+                        }`}>
+                            {topic.repetitions > 3 ? '⭐ Mastered' : `Rep ${topic.repetitions}`}
+                        </span>
+                        <button
+                            onClick={() => handleDelete(topic._id)}
+                            className="text-gray-300 hover:text-red-500 transition text-lg leading-none"
+                            title="Delete topic"
+                        >
+                        🗑
+                        </button>
+                    </div>
                 </div>
                 <div className="mt-2 text-xs text-gray-500">
                   📅 {getNextReview(topic.nextReviewDate)}

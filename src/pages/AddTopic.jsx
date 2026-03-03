@@ -3,11 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import axios from 'axios'
 
-const SUBJECTS = [
-  'Mathematics', 'Physics', 'Chemistry', 'Biology',
-  'History', 'Geography', 'English', 'Computer Science',
-  'Economics', 'Psychology', 'General'
-]
+
 
 export default function AddTopic() {
   const [form, setForm] = useState({ name: '', subject: 'General' })
@@ -90,15 +86,13 @@ export default function AddTopic() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Subject
               </label>
-              <select
+              <input
+                type='text'
+                placeholder="e.g. Mathematics, History, Guitar, Cooking..."
                 value={form.subject}
                 onChange={e => setForm({ ...form, subject: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm bg-white"
-              >
-                {SUBJECTS.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
+              />
             </div>
 
             {/* SR Info box */}
