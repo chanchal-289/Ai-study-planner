@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import axios from 'axios'
+import ThemeToggle from '../components/ThemeToggle'
 
 export default function Login() {
   const [form, setForm] = useState({ email: '', password: '' })
@@ -26,58 +27,80 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-blue-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+    <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4 relative overflow-hidden">
+      <ThemeToggle className="absolute top-4 right-4 z-20" />
+
+      {/* Background glow effects */}
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-600 opacity-10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-600 opacity-10 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="w-full max-w-md relative z-10">
+        {/* Logo */}
         <div className="text-center mb-8">
-          <div className="text-4xl mb-2">🧠</div>
-          <h1 className="text-2xl font-bold text-gray-800">Welcome Back</h1>
-          <p className="text-gray-500 text-sm mt-1">Log in to your study planner</p>
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 mb-4 shadow-lg shadow-indigo-500/30">
+            <span className="text-3xl">🧠</span>
+          </div>
+          <h1 className="text-3xl font-bold text-white">StudyPlanner AI</h1>
+          <p className="text-slate-400 mt-2 text-sm">Welcome back! Log in to continue.</p>
         </div>
 
-        {error && (
-          <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg text-sm mb-4">
-            {error}
-          </div>
-        )}
+        {/* Card */}
+        <div className="bg-[#1a1d27] border border-[#2d3148] rounded-2xl p-8 shadow-2xl">
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl text-sm mb-5">
+              ⚠️ {error}
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              placeholder="you@email.com"
-              value={form.email}
-              onChange={e => setForm({ ...form, email: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-            <input
-              type="password"
-              placeholder="Your password"
-              value={form.password}
-              onChange={e => setForm({ ...form, password: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              required
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-50"
-          >
-            {loading ? 'Logging in...' : 'Log In'}
-          </button>
-        </form>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Email</label>
+              <input
+                type="email"
+                placeholder="you@email.com"
+                value={form.email}
+                onChange={e => setForm({ ...form, email: e.target.value })}
+                className="w-full px-4 py-3 bg-[#0f1117] border border-[#2d3148] rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition text-sm"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Password</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={form.password}
+                onChange={e => setForm({ ...form, password: e.target.value })}
+                className="w-full px-4 py-3 bg-[#0f1117] border border-[#2d3148] rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition text-sm"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition-all duration-200 shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                  Logging in...
+                </span>
+              ) : 'Log In →'}
+            </button>
+          </form>
 
-        <p className="text-center text-sm text-gray-500 mt-6">
-          Don't have an account?{' '}
-          <Link to="/signup" className="text-indigo-600 font-medium hover:underline">
-            Sign up
-          </Link>
-        </p>
+          <div className="mt-6 pt-6 border-t border-[#2d3148] text-center">
+            <p className="text-slate-400 text-sm">
+              Don't have an account?{' '}
+              <Link to="/signup" className="text-indigo-400 hover:text-indigo-300 font-medium transition">
+                Sign up free
+              </Link>
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   )

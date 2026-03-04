@@ -2,6 +2,7 @@ import express from 'express'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { protect } from '../middleware/auth.js'
 import Topic from '../models/Topic.js'
+import StudyPlan from '../models/StudyPlan.js'
 
 const router = express.Router()
 const GEMINI_MODELS = [
@@ -9,8 +10,9 @@ const GEMINI_MODELS = [
   'gemini-2.0-flash-lite',
   'gemini-1.5-flash-latest',
   'gemini-1.5-pro-latest',
-  'gemini-pro'
+  'gemini-pro',
 ]
+const PLAN_TYPES = ['daily', 'weekly', 'monthly']
 
 function parseModelJson(text) {
   const cleaned = text.replace(/```json|```/gi, '').trim()
@@ -20,7 +22,6 @@ function parseModelJson(text) {
   } catch {
     const start = cleaned.indexOf('{')
     const end = cleaned.lastIndexOf('}')
-
     if (start !== -1 && end !== -1 && end > start) {
       return JSON.parse(cleaned.slice(start, end + 1))
     }
@@ -41,95 +42,182 @@ function formatErrorSummary(message = '') {
   return first || 'Failed to generate AI plan'
 }
 
-function formatHourLabel(hour24) {
-  const suffix = hour24 >= 12 ? 'PM' : 'AM'
-  const hour12 = ((hour24 + 11) % 12) + 1
-  return `${hour12}:00 ${suffix}`
+function parseTimeToMinutes(timeText) {
+  if (!timeText || typeof timeText !== 'string') return null
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(timeText.trim())
+  if (!match) return null
+  return Number(match[1]) * 60 + Number(match[2])
 }
 
-function buildFallbackDailyPlan(allTopics, dueTopics) {
-  const sessions = []
-  const reviewTopics = dueTopics.slice(0, 4)
-  const newTopics = allTopics.filter(t => !dueTopics.some(d => String(d._id) === String(t._id))).slice(0, 4)
-  let hour = 9
+function formatMinuteLabel(totalMinutes) {
+  const minutesInDay = ((totalMinutes % 1440) + 1440) % 1440
+  const hour24 = Math.floor(minutesInDay / 60)
+  const mins = minutesInDay % 60
+  const suffix = hour24 >= 12 ? 'PM' : 'AM'
+  const hour12 = ((hour24 + 11) % 12) + 1
+  return `${hour12}:${String(mins).padStart(2, '0')} ${suffix}`
+}
 
-  reviewTopics.forEach((topic) => {
-    sessions.push({
-      time: formatHourLabel(hour),
-      duration: '30 mins',
-      topic: topic.name,
-      subject: topic.subject,
-      type: 'review',
-      tip: 'Recall from memory first, then verify with notes.'
-    })
-    hour += 1
-  })
+function normalizeTimeWindow(startTime, endTime, fallbackStart = '09:00', fallbackEnd = '17:00') {
+  let start = parseTimeToMinutes(startTime)
+  let end = parseTimeToMinutes(endTime)
 
-  sessions.push({
-    time: formatHourLabel(hour),
-    duration: '20 mins',
-    topic: 'Break',
-    subject: '',
-    type: 'break',
-    tip: 'Hydrate and take a short walk.'
-  })
-  hour += 1
-
-  newTopics.forEach((topic) => {
-    sessions.push({
-      time: formatHourLabel(hour),
-      duration: '45 mins',
-      topic: topic.name,
-      subject: topic.subject,
-      type: 'study',
-      tip: 'Use active recall: close notes and explain the idea aloud.'
-    })
-    hour += 1
-  })
+  if (start === null) start = parseTimeToMinutes(fallbackStart)
+  if (end === null) end = parseTimeToMinutes(fallbackEnd)
+  if (end <= start) end += 24 * 60
+  if (end - start < 120) end = start + 120
 
   return {
-    motivationalTip: 'Consistency beats intensity. Focus on finishing each session.',
-    totalHours: Math.max(2, Math.round((sessions.length * 0.5) * 10) / 10),
-    plan: sessions,
-    source: 'fallback'
+    startMinutes: start,
+    endMinutes: end,
+    startTime: `${String(Math.floor(start / 60) % 24).padStart(2, '0')}:${String(start % 60).padStart(2, '0')}`,
+    endTime: `${String(Math.floor(end / 60) % 24).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`,
+    label: `${formatMinuteLabel(start)} - ${formatMinuteLabel(end)}`,
   }
 }
 
-function buildFallbackWeeklyPlan(allTopics) {
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function topicDuration(topic, fallback = 45) {
+  const raw = Number(topic?.preferredDuration)
+  if (!Number.isFinite(raw)) return fallback
+  return clamp(Math.round(raw), 15, 240)
+}
+
+function buildFallbackDailyPlan(allTopics, dueTopics, timeWindow) {
+  const reviewTopics = dueTopics.slice(0, 4)
+  const newTopics = allTopics
+    .filter((t) => !dueTopics.some((d) => String(d._id) === String(t._id)))
+    .slice(0, 4)
+
+  const tasks = []
+  reviewTopics.forEach((topic) => {
+    const minutes = clamp(Math.round(topicDuration(topic, 35) * 0.75), 20, 90)
+    tasks.push({
+      durationMinutes: minutes,
+      topic: topic.name,
+      subject: topic.subject,
+      type: 'review',
+      tip: 'Recall first, then verify notes.',
+    })
+  })
+  newTopics.forEach((topic) => {
+    const minutes = topicDuration(topic, 45)
+    tasks.push({
+      durationMinutes: minutes,
+      topic: topic.name,
+      subject: topic.subject,
+      type: 'study',
+      tip: 'Summarize the key idea in one sentence before moving on.',
+    })
+  })
+
+  const sessions = []
+  let cursor = timeWindow.startMinutes
+  const hardEnd = timeWindow.endMinutes
+
+  for (let i = 0; i < tasks.length; i += 1) {
+    const item = tasks[i]
+    if (cursor + item.durationMinutes > hardEnd) break
+    sessions.push({
+      time: formatMinuteLabel(cursor),
+      duration: `${item.durationMinutes} mins`,
+      topic: item.topic,
+      subject: item.subject,
+      type: item.type,
+      tip: item.tip,
+    })
+    cursor += item.durationMinutes
+
+    const shouldBreak = (i + 1) % 2 === 0 && i !== tasks.length - 1
+    if (shouldBreak && cursor + 15 <= hardEnd) {
+      sessions.push({
+        time: formatMinuteLabel(cursor),
+        duration: '15 mins',
+        topic: 'Break',
+        subject: '',
+        type: 'break',
+        tip: 'Stretch, hydrate, and rest your eyes.',
+      })
+      cursor += 15
+    }
+  }
+
+  const totalHours = Math.round(((cursor - timeWindow.startMinutes) / 60) * 10) / 10
+
+  return {
+    motivationalTip: 'Consistency beats intensity. Complete each block before switching context.',
+    totalHours: clamp(totalHours, 2, 12),
+    startTime: timeWindow.startTime,
+    endTime: timeWindow.endTime,
+    plan: sessions,
+    source: 'fallback',
+  }
+}
+
+function buildFallbackWeeklyPlan(allTopics, timeWindow) {
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
   const start = new Date()
+  const windowHours = Math.max(2, Math.round(((timeWindow.endMinutes - timeWindow.startMinutes) / 60) * 10) / 10)
+  const targetHours = clamp(Math.round((windowHours * 0.5) * 10) / 10, 1.5, 4)
+
   const week = days.map((dayName, i) => {
     const date = new Date(start)
     date.setDate(start.getDate() + i)
-    const topic = allTopics[i % Math.max(1, allTopics.length)]
+    const topicA = allTopics[i % Math.max(1, allTopics.length)]
+    const topicB = allTopics[(i + 1) % Math.max(1, allTopics.length)]
     const isRest = i === 6
+    const aDuration = topicDuration(topicA, 50)
+    const bDuration = topicDuration(topicB, 40)
 
     return {
       day: dayName,
       date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      totalHours: isRest ? 0 : 2,
-      focus: isRest ? 'Recovery / light revision' : topic?.subject || 'General',
-      sessions: isRest ? [] : [
-        {
-          topic: topic?.name || 'Revision',
-          subject: topic?.subject || 'General',
-          duration: '60 mins',
-          type: 'study'
-        },
-        {
-          topic: topic?.name || 'Recall Practice',
-          subject: topic?.subject || 'General',
-          duration: '45 mins',
-          type: 'review'
-        }
-      ]
+      totalHours: isRest ? 0 : clamp(Math.round(((aDuration + bDuration) / 60) * 10) / 10, 1.5, Math.max(2, targetHours)),
+      focus: isRest ? 'Recovery / light revision' : topicA?.subject || 'General',
+      timeWindow: timeWindow.label,
+      sessions: isRest
+        ? []
+        : [
+            { topic: topicA?.name || 'Revision', subject: topicA?.subject || 'General', duration: `${aDuration} mins`, type: 'study' },
+            { topic: topicB?.name || 'Recall practice', subject: topicB?.subject || 'General', duration: `${bDuration} mins`, type: 'review' },
+          ],
     }
   })
 
   return {
     weekSummary: 'Balanced weekly plan generated locally because AI quota is currently unavailable.',
+    startTime: timeWindow.startTime,
+    endTime: timeWindow.endTime,
     week,
-    source: 'fallback'
+    source: 'fallback',
+  }
+}
+
+function buildFallbackMonthlyPlan(allTopics, timeWindow) {
+  const topicNames = allTopics.slice(0, 6).map((t) => t.name)
+  const topicDurations = allTopics.slice(0, 6).map((t) => `${t.name}: ${topicDuration(t, 45)} mins`)
+  const weeks = [1, 2, 3, 4].map((n) => ({
+    week: `Week ${n}`,
+    focus: topicNames[(n - 1) % Math.max(1, topicNames.length)] || 'Core revision',
+    goals: [
+      `Complete ${(topicNames[(n - 1) % Math.max(1, topicNames.length)] || 'core topic')} revision`,
+      `Use preferred durations (${topicDurations.slice(0, 3).join(', ') || '45 mins default'})`,
+      'Do one active-recall checkpoint',
+      'Write a short progress summary',
+    ],
+    studyDays: 5,
+    timeWindow: timeWindow.label,
+  }))
+
+  return {
+    monthSummary: 'Monthly plan generated locally because AI quota is currently unavailable.',
+    startTime: timeWindow.startTime,
+    endTime: timeWindow.endTime,
+    weeks,
+    source: 'fallback',
   }
 }
 
@@ -155,126 +243,206 @@ async function generatePlanFromPrompt(prompt) {
   throw new Error(`Unable to generate AI plan with available models. ${errors.join(' | ')}`)
 }
 
-// Daily plan
-router.get('/daily', protect, async (req, res) => {
-  try {
-    const today = new Date()
-    today.setHours(23, 59, 59, 999)
+async function upsertPlan(userId, type, startTime, endTime, data) {
+  await StudyPlan.findOneAndUpdate(
+    { userId, type },
+    { userId, type, startTime, endTime, data },
+    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+  )
+}
 
-    const dueTopics = await Topic.find({
-      userId: req.userId,
-      nextReviewDate: { $lte: today }
+router.get('/saved', protect, async (req, res) => {
+  try {
+    const docs = await StudyPlan.find({ userId: req.userId }).sort({ updatedAt: -1 })
+    const byType = { daily: null, weekly: null, monthly: null }
+
+    docs.forEach((doc) => {
+      if (!byType[doc.type]) {
+        byType[doc.type] = {
+          id: doc._id,
+          type: doc.type,
+          startTime: doc.startTime,
+          endTime: doc.endTime,
+          updatedAt: doc.updatedAt,
+          data: doc.data,
+        }
+      }
     })
 
-    const allTopics = await Topic.find({ userId: req.userId })
-
-    if (allTopics.length === 0) {
-      return res.json({ plan: [], message: 'Add some topics first!' })
-    }
-
-    const prompt = `
-      You are an expert study coach AI. Create a personalized daily study plan.
-      
-      Topics due for review today: ${dueTopics.length > 0
-        ? dueTopics.map(t => `${t.name} (${t.subject}, review #${t.repetitions + 1})`).join(', ')
-        : 'None'}
-      
-      All topics being studied: ${allTopics.map(t => `${t.name} (${t.subject})`).join(', ')}
-      
-      Create a realistic 6-8 hour study day plan. Include:
-      - Review sessions for due topics (30 min each)
-      - New study sessions for other topics
-      - Short breaks every 2 hours
-      - A motivating tip for the day
-      
-      Respond ONLY with this exact JSON structure, no markdown, no backticks:
-      {
-        "motivationalTip": "A short motivating message for today",
-        "totalHours": 4,
-        "plan": [
-          {
-            "time": "9:00 AM",
-            "duration": "30 mins",
-            "topic": "Topic name",
-            "subject": "Subject",
-            "type": "review",
-            "tip": "Quick study tip for this topic"
-          }
-        ]
-      }
-      Types can be: "review", "study", "break"
-      For breaks, set topic as "Break" and tip as a relaxation suggestion.
-    `
-
-    try {
-      const parsed = await generatePlanFromPrompt(prompt)
-      res.json(parsed)
-    } catch (err) {
-      if (isQuotaError(err.message)) {
-        return res.json(buildFallbackDailyPlan(allTopics, dueTopics))
-      }
-      res.status(500).json({ error: formatErrorSummary(err.message) })
-    }
+    res.json(byType)
   } catch (err) {
     res.status(500).json({ error: formatErrorSummary(err.message) })
   }
 })
 
-// Weekly plan
-router.get('/weekly', protect, async (req, res) => {
+router.delete('/saved/:type', protect, async (req, res) => {
   try {
+    const { type } = req.params
+    if (!PLAN_TYPES.includes(type)) {
+      return res.status(400).json({ error: 'Invalid plan type' })
+    }
+
+    await StudyPlan.findOneAndDelete({ userId: req.userId, type })
+    res.json({ message: `${type} plan deleted` })
+  } catch (err) {
+    res.status(500).json({ error: formatErrorSummary(err.message) })
+  }
+})
+
+router.post('/daily', protect, async (req, res) => {
+  try {
+    const timeWindow = normalizeTimeWindow(req.body?.startTime, req.body?.endTime)
+    const today = new Date()
+    today.setHours(23, 59, 59, 999)
+
+    const dueTopics = await Topic.find({ userId: req.userId, nextReviewDate: { $lte: today } })
     const allTopics = await Topic.find({ userId: req.userId })
 
     if (allTopics.length === 0) {
-      return res.json({ week: [], message: 'Add some topics first!' })
+      return res.json({ startTime: timeWindow.startTime, endTime: timeWindow.endTime, plan: [], message: 'Add some topics first!' })
     }
 
     const prompt = `
-      You are an expert study coach AI. Create a personalized 7-day weekly study plan.
-      
-      Student's topics: ${allTopics.map(t =>
-        `${t.name} (${t.subject}, next review: ${new Date(t.nextReviewDate).toDateString()}, repetitions: ${t.repetitions})`
-      ).join(', ')}
-      
-      Today is ${new Date().toDateString()}.
-      
-      Create a balanced weekly plan that:
-      - Distributes topics evenly across 7 days
-      - Schedules reviews on their due dates
-      - Allows rest on at least 1 day
-      - Keeps daily study to 2-4 hours max
-      
-      Respond ONLY with this exact JSON structure, no markdown, no backticks:
-      {
-        "weekSummary": "Brief overview of the week",
-        "week": [
-          {
-            "day": "Monday",
-            "date": "Mar 4",
-            "totalHours": 2,
-            "focus": "Main focus for the day",
-            "sessions": [
-              {
-                "topic": "Topic name",
-                "subject": "Subject",
-                "duration": "45 mins",
-                "type": "review"
-              }
-            ]
-          }
-        ]
-      }
-    `
+You are an expert study coach AI. Create a personalized daily study plan.
+Available study window for today: ${timeWindow.label}.
+Topics due for review: ${dueTopics.length > 0 ? dueTopics.map((t) => `${t.name} (${t.subject}, preferred ${topicDuration(t, 45)} mins, review #${t.repetitions + 1})`).join(', ') : 'None'}.
+All topics: ${allTopics.map((t) => `${t.name} (${t.subject}, preferred ${topicDuration(t, 45)} mins)`).join(', ')}.
+Build a realistic schedule inside ONLY the provided time window.
+Use each topic's preferred duration when assigning session length. Include review sessions, study sessions, and short breaks.
+Respond ONLY JSON:
+{
+  "motivationalTip": "short tip",
+  "totalHours": 4,
+  "startTime": "${timeWindow.startTime}",
+  "endTime": "${timeWindow.endTime}",
+  "plan": [
+    {
+      "time": "9:00 AM",
+      "duration": "30 mins",
+      "topic": "Topic name",
+      "subject": "Subject",
+      "type": "review",
+      "tip": "Study tip"
+    }
+  ]
+}
+Allowed types: "review", "study", "break".
+For breaks use topic "Break".
+`
 
+    let result
     try {
       const parsed = await generatePlanFromPrompt(prompt)
-      res.json(parsed)
+      result = { ...parsed, startTime: timeWindow.startTime, endTime: timeWindow.endTime }
     } catch (err) {
-      if (isQuotaError(err.message)) {
-        return res.json(buildFallbackWeeklyPlan(allTopics))
+      if (!isQuotaError(err.message)) {
+        return res.status(500).json({ error: formatErrorSummary(err.message) })
       }
-      res.status(500).json({ error: formatErrorSummary(err.message) })
+      result = buildFallbackDailyPlan(allTopics, dueTopics, timeWindow)
     }
+
+    await upsertPlan(req.userId, 'daily', timeWindow.startTime, timeWindow.endTime, result)
+    res.json(result)
+  } catch (err) {
+    res.status(500).json({ error: formatErrorSummary(err.message) })
+  }
+})
+
+router.post('/weekly', protect, async (req, res) => {
+  try {
+    const timeWindow = normalizeTimeWindow(req.body?.startTime, req.body?.endTime)
+    const allTopics = await Topic.find({ userId: req.userId })
+
+    if (allTopics.length === 0) {
+      return res.json({ startTime: timeWindow.startTime, endTime: timeWindow.endTime, week: [], message: 'Add some topics first!' })
+    }
+
+    const prompt = `
+You are an expert study coach AI. Create a personalized 7-day weekly study plan.
+Daily study window for each day: ${timeWindow.label}.
+Student topics: ${allTopics.map((t) => `${t.name} (${t.subject}, preferred ${topicDuration(t, 45)} mins, next review ${new Date(t.nextReviewDate).toDateString()}, repetitions ${t.repetitions})`).join(', ')}.
+Today is ${new Date().toDateString()}.
+Respect each topic's preferred duration when creating sessions.
+Respond ONLY JSON:
+{
+  "weekSummary": "overview",
+  "startTime": "${timeWindow.startTime}",
+  "endTime": "${timeWindow.endTime}",
+  "week": [
+    {
+      "day": "Monday",
+      "date": "Mar 4",
+      "totalHours": 2.5,
+      "focus": "focus area",
+      "sessions": [
+        { "topic": "Topic", "subject": "Subject", "duration": "45 mins", "type": "review" }
+      ]
+    }
+  ]
+}
+`
+
+    let result
+    try {
+      const parsed = await generatePlanFromPrompt(prompt)
+      result = { ...parsed, startTime: timeWindow.startTime, endTime: timeWindow.endTime }
+    } catch (err) {
+      if (!isQuotaError(err.message)) {
+        return res.status(500).json({ error: formatErrorSummary(err.message) })
+      }
+      result = buildFallbackWeeklyPlan(allTopics, timeWindow)
+    }
+
+    await upsertPlan(req.userId, 'weekly', timeWindow.startTime, timeWindow.endTime, result)
+    res.json(result)
+  } catch (err) {
+    res.status(500).json({ error: formatErrorSummary(err.message) })
+  }
+})
+
+router.post('/monthly', protect, async (req, res) => {
+  try {
+    const timeWindow = normalizeTimeWindow(req.body?.startTime, req.body?.endTime)
+    const allTopics = await Topic.find({ userId: req.userId })
+
+    if (allTopics.length === 0) {
+      return res.json({ startTime: timeWindow.startTime, endTime: timeWindow.endTime, weeks: [], message: 'Add some topics first!' })
+    }
+
+    const prompt = `
+You are an expert study coach AI. Create a personalized 4-week monthly study plan.
+Preferred daily study window: ${timeWindow.label}.
+Student topics: ${allTopics.map((t) => `${t.name} (${t.subject}, preferred ${topicDuration(t, 45)} mins)`).join(', ')}.
+Use preferred duration guidance when suggesting weekly goals and workload.
+Respond ONLY JSON:
+{
+  "monthSummary": "month overview",
+  "startTime": "${timeWindow.startTime}",
+  "endTime": "${timeWindow.endTime}",
+  "weeks": [
+    {
+      "week": "Week 1",
+      "focus": "main focus",
+      "goals": ["goal 1", "goal 2", "goal 3"],
+      "studyDays": 5
+    }
+  ]
+}
+`
+
+    let result
+    try {
+      const parsed = await generatePlanFromPrompt(prompt)
+      result = { ...parsed, startTime: timeWindow.startTime, endTime: timeWindow.endTime }
+    } catch (err) {
+      if (!isQuotaError(err.message)) {
+        return res.status(500).json({ error: formatErrorSummary(err.message) })
+      }
+      result = buildFallbackMonthlyPlan(allTopics, timeWindow)
+    }
+
+    await upsertPlan(req.userId, 'monthly', timeWindow.startTime, timeWindow.endTime, result)
+    res.json(result)
   } catch (err) {
     res.status(500).json({ error: formatErrorSummary(err.message) })
   }

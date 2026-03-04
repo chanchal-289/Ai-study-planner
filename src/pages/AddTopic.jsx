@@ -2,11 +2,11 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import axios from 'axios'
-
-
+import ThemeToggle from '../components/ThemeToggle'
+import AppSidebar from '../components/AppSidebar'
 
 export default function AddTopic() {
-  const [form, setForm] = useState({ name: '', subject: 'General' })
+  const [form, setForm] = useState({ name: '', subject: '' })
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
@@ -18,13 +18,11 @@ export default function AddTopic() {
     setLoading(true)
     setError('')
     try {
-      await axios.post(
-        'http://localhost:5000/api/topics',
-        form,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
+      await axios.post('http://localhost:5000/api/topics', form, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
       setSuccess(true)
-      setForm({ name: '', subject: 'General' })
+      setForm({ name: '', subject: '' })
       setTimeout(() => navigate('/dashboard'), 1500)
     } catch (err) {
       setError(err.response?.data?.error || 'Something went wrong')
@@ -34,93 +32,92 @@ export default function AddTopic() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-blue-100 p-4">
-      <div className="max-w-lg mx-auto">
-
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-8 pt-6">
+    <div className="min-h-screen bg-[#0f1117] md:flex">
+      <AppSidebar />
+      <div className="flex-1">
+      {/* Navbar */}
+      <nav className="bg-[#1a1d27] border-b border-[#2d3148] px-4 md:px-6 py-4 md:hidden">
+        <div className="max-w-2xl mx-auto flex items-center gap-3">
           <button
             onClick={() => navigate('/dashboard')}
-            className="text-gray-500 hover:text-gray-700 text-2xl"
-          >
-            ←
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">Add New Topic</h1>
-            <p className="text-gray-500 text-sm">We'll automatically schedule your reviews</p>
-          </div>
+            className="text-slate-400 hover:text-white transition text-xl"
+          >←</button>
+          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-sm">🧠</div>
+          <span className="font-bold text-white">Add New Topic</span>
+          <ThemeToggle className="ml-auto" />
+        </div>
+      </nav>
+
+      <div className="max-w-2xl mx-auto p-4 md:p-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-white">What did you study?</h1>
+          <p className="text-slate-400 text-sm mt-1">We'll automatically schedule your spaced reviews</p>
         </div>
 
-        {/* Success message */}
         {success && (
-          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm mb-4 flex items-center gap-2">
+          <div className="bg-green-500/10 border border-green-500/20 text-green-400 px-4 py-3 rounded-xl text-sm mb-5 flex items-center gap-2">
             ✅ Topic added! Redirecting to dashboard...
           </div>
         )}
-
-        {/* Error message */}
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm mb-4">
-            {error}
+          <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl text-sm mb-5">
+            ⚠️ {error}
           </div>
         )}
 
-        {/* Form */}
-        <div className="bg-white rounded-2xl shadow-lg p-6">
+        <div className="bg-[#1a1d27] border border-[#2d3148] rounded-2xl p-6">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Topic Name *
-              </label>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Topic Name *</label>
               <input
                 type="text"
-                placeholder="e.g. Photosynthesis, World War II, Quadratic Equations"
+                placeholder="e.g. Photosynthesis, World War II, Linked Lists..."
                 value={form.name}
                 onChange={e => setForm({ ...form, name: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
+                className="w-full px-4 py-3 bg-[#0f1117] border border-[#2d3148] rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition text-sm"
                 required
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Subject
-              </label>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Subject</label>
               <input
-                type='text'
-                placeholder="e.g. Mathematics, History, Guitar, Cooking..."
+                type="text"
+                placeholder="e.g. Biology, History, DSA, Guitar..."
                 value={form.subject}
                 onChange={e => setForm({ ...form, subject: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
+                className="w-full px-4 py-3 bg-[#0f1117] border border-[#2d3148] rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition text-sm"
               />
             </div>
 
-            {/* SR Info box */}
-            <div className="bg-indigo-50 rounded-xl p-4 text-sm text-indigo-700">
-              <div className="font-semibold mb-1">🧠 How spaced repetition works</div>
-              <p className="text-indigo-600 text-xs leading-relaxed">
-                After adding this topic, we'll schedule your first review for <strong>tomorrow</strong>.
-                Each time you rate your confidence, the next review date adjusts automatically:
-                high confidence = longer gap, low confidence = review sooner.
-              </p>
-              <div className="flex gap-2 mt-2 flex-wrap">
-                {['Day 1', 'Day 3', 'Day 7', 'Day 14', 'Day 30'].map((d, i) => (
-                  <span key={i} className="bg-indigo-100 text-indigo-600 px-2 py-1 rounded text-xs font-medium">
-                    {d}
+            {/* SR explainer */}
+            <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-4">
+              <div className="text-sm font-semibold text-indigo-400 mb-2">🧠 How your reviews will be scheduled</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {[
+                  { day: 'Day 1', color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/20' },
+                  { day: 'Day 3', color: 'bg-purple-500/20 text-purple-400 border-purple-500/20' },
+                  { day: 'Day 7', color: 'bg-blue-500/20 text-blue-400 border-blue-500/20' },
+                  { day: 'Day 14', color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/20' },
+                  { day: 'Day 30', color: 'bg-green-500/20 text-green-400 border-green-500/20' },
+                ].map(({ day, color }) => (
+                  <span key={day} className={`text-xs px-3 py-1 rounded-full border font-medium ${color}`}>
+                    {day}
                   </span>
                 ))}
+                <span className="text-xs text-slate-500">→ adjusts based on your rating</span>
               </div>
             </div>
 
             <button
               type="submit"
               disabled={loading || success}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-50 text-sm"
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition shadow-lg shadow-indigo-500/20 disabled:opacity-50 text-sm"
             >
-              {loading ? 'Adding topic...' : '+ Add Topic'}
+              {loading ? 'Adding...' : '+ Add Topic'}
             </button>
           </form>
         </div>
+      </div>
       </div>
     </div>
   )
