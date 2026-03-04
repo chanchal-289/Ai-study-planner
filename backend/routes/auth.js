@@ -2,6 +2,7 @@ import express from 'express'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import User from '../models/User.js'
+import { protect } from '../middleware/auth.js'
 
 const router = express.Router()
 
@@ -27,6 +28,19 @@ router.post('/login', async (req, res) => {
     if (!valid) return res.status(400).json({ error: 'Invalid credentials' })
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' })
     res.json({ token, user: { id: user._id, name: user.name, email: user.email } })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+router.get('/stats', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).select('-password')
+    res.json({
+      streak: user.streak,
+      totalReviews: user.totalReviews,
+      lastStudiedDate: user.lastStudiedDate
+    })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
